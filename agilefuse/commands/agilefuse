@@ -1,0 +1,61 @@
+#!/usr/bin/env python
+
+from agilefuse import AgileFUSE
+from fuse import FUSE, Operations
+import os,sys
+
+__version__ = "0.0.1"
+__author__ = "Wylie Swanson (wylie@pingzero.net)"
+
+DEBUG = False
+
+if sys.platform == "darwin":
+	DEFAULT_MOUNT_POINT = "AgileFUSE"
+else:
+	DEFAULT_MOUNT_POINT = "/mnt/AgileFUSE"
+
+EGRESS_BASE_URL = "http://global.mt.lldns.net/llnw/staff/wylie"
+
+FUSE_VOLNAME = 'AgileFUSE'
+FUSE_AUTO_CACHE = True
+FUSE_NOTHREADS = True
+FUSE_RDONLY = True
+FUSE_NOBROWSE = False
+
+
+if __name__ == "__main__":
+	if len(sys.argv) == 1:
+		mountPoint = DEFAULT_MOUNT_POINT
+		if not os.path.isdir(mountPoint):
+			print "Making directory", mountPoint, "for AgileFUSE"
+			os.mkdir(mountPoint)
+	elif len(sys.argv) == 2:
+		mountPoint = sys.argv[1]
+		if not os.path.isdir(mountPoint):
+			print "%s: No such directory. Create it before trying again." % mountPoint
+			sys.exit(1)
+	else:
+		print "usage: %s [mountpoint]" % sys.argv[0]
+		sys.exit(1)
+
+	kwargs = dict()
+	if DEBUG: 
+		kwargs['foreground'] = True
+	print "Mounting AgileFUSE at %s." % mountPoint
+	if sys.platform == "darwin":
+		unmountStr = "When done, eject it from the Finder or run 'unmount %s'." % "AgileFUSE"
+		kwargs['volname'] = FUSE_VOLNAME
+		kwargs['noappledouble'] = True
+		kwargs['noapplexattr'] = True
+		kwargs['negative_vncache'] = True
+		if FUSE_NOBROWSE: kwargs['nobrowse'] = FUSE_NOBROWSE
+		kwargs['rdonly'] = FUSE_RDONLY
+		kwargs['max_read'] = 1048576
+	else:
+		unmountStr = "Unmount it with `fusermount -u %s' (without quotes)." % mountPoint
+
+	kwargs['auto_cache'] = FUSE_AUTO_CACHE
+	kwargs['nothreads'] = FUSE_NOTHREADS
+
+	print unmountStr
+	fuse = FUSE(AgileFUSE(), mountPoint, **kwargs )
