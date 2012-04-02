@@ -1,0 +1,7 @@
+AgileFUSE is a module and command that provides a FUSE abstraction of the 
+Agile Cloud Storage, commonly known as a 'mounted' network filesystem on a 
+native filesystem.  It leverages the AgileCLU python module and associated 
+configuration files.
+
+At present, it provides a read-only filesystem.  It has been tested on 
+Linux and Mac OS X (and can be configured to appear on the OS X desktop).
