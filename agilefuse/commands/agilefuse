@@ -4,10 +4,10 @@ from agilefuse import AgileFUSE
 from fuse import FUSE, Operations
 import os,sys
 
-__version__ = "0.0.1"
+__version__ = "0.0.2"
 __author__ = "Wylie Swanson (wylie@pingzero.net)"
 
-DEBUG = False
+DEBUG = True
 
 if sys.platform == "darwin":
 	DEFAULT_MOUNT_POINT = "AgileFUSE"
@@ -46,11 +46,13 @@ if __name__ == "__main__":
 		unmountStr = "When done, eject it from the Finder or run 'unmount %s'." % "AgileFUSE"
 		kwargs['volname'] = FUSE_VOLNAME
 		kwargs['noappledouble'] = True
-		kwargs['noapplexattr'] = True
+		# kwargs['noapplexattr'] = True
 		kwargs['negative_vncache'] = True
 		if FUSE_NOBROWSE: kwargs['nobrowse'] = FUSE_NOBROWSE
 		kwargs['rdonly'] = FUSE_RDONLY
-		kwargs['max_read'] = 1048576
+		if os.path.isfile("/etc/agile/AgileVolume.icns"):
+			kwargs['modules'] = 'volicon'
+			kwargs['iconpath'] = '/etc/agile/AgileVolume.icns'
 	else:
 		unmountStr = "Unmount it with `fusermount -u %s' (without quotes)." % mountPoint
 
