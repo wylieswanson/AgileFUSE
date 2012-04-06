@@ -4,24 +4,23 @@ from agilefuse import AgileFUSE
 from fuse import FUSE, Operations
 import os,sys
 
-__version__ = "0.0.2"
+__version__ = "0.0.3"
 __author__ = "Wylie Swanson (wylie@pingzero.net)"
 
-DEBUG = True
+DEBUG = False
 
 if sys.platform == "darwin":
-	DEFAULT_MOUNT_POINT = "AgileFUSE"
+	DEFAULT_MOUNT_POINT = "/Volumes/Agile Storage"
 else:
-	DEFAULT_MOUNT_POINT = "/mnt/AgileFUSE"
+	DEFAULT_MOUNT_POINT = "/mnt/Agile"
 
-EGRESS_BASE_URL = "http://global.mt.lldns.net/llnw/staff/wylie"
-
-FUSE_VOLNAME = 'AgileFUSE'
+FUSE_VOLNAME = 'Agile Storage'
 FUSE_AUTO_CACHE = True
-FUSE_NOTHREADS = True
+FUSE_NOTHREADS = False
 FUSE_RDONLY = True
 FUSE_NOBROWSE = False
-
+FUSE_NOAPPLEXATTR = False
+FUSE_APPLELOCAL = True
 
 if __name__ == "__main__":
 	if len(sys.argv) == 1:
@@ -46,10 +45,11 @@ if __name__ == "__main__":
 		unmountStr = "When done, eject it from the Finder or run 'unmount %s'." % "AgileFUSE"
 		kwargs['volname'] = FUSE_VOLNAME
 		kwargs['noappledouble'] = True
-		# kwargs['noapplexattr'] = True
+		if FUSE_APPLELOCAL: kwargs['local'] = True
+		if FUSE_NOAPPLEXATTR: kwargs['noapplexattr'] = True
 		kwargs['negative_vncache'] = True
 		if FUSE_NOBROWSE: kwargs['nobrowse'] = FUSE_NOBROWSE
-		kwargs['rdonly'] = FUSE_RDONLY
+		if FUSE_RDONLY: kwargs['rdonly'] = FUSE_RDONLY
 		if os.path.isfile("/etc/agile/AgileVolume.icns"):
 			kwargs['modules'] = 'volicon'
 			kwargs['iconpath'] = '/etc/agile/AgileVolume.icns'

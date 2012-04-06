@@ -1,36 +1,31 @@
 """
-
-	agilefuse: a filesystem abstraction of Agile Cloud Storage
-
+agilefuse: a filesystem abstraction of Agile Cloud Storage
 This module provides an abstract base class "AgileFUSE"
-
 """
 
-__version__ = "0.0.2"
+__version__ = "0.0.3"
 __author__ = "Wylie Swanson (wylie@pingzero.net)"
 
 
-import os, sys
+import os
 from AgileCLU import AgileCLU
-import datetime
 import time
+import datetime
 from stat import S_IFDIR, S_IFREG
 from fuse import FUSE, Operations
 import urllib2
 import json
-import logging
 
 class AgileFUSE(Operations):
 
 	def __init__(self):
-		self.log = logging.getLogger(self.__class__.__name__)
-		self.api = AgileCLU('agile')
+		self.agile = AgileCLU('agile')
 		self.root = '/'
 		self.path = '/'
 		self.cache_paths = {}
 	
 	def __del__(self):
-		self.api.logout()
+		self.agile.logout()
 	
 	def __call__(self, op, path, *args):
 		print '->', op, path, args[0] if args else ''
@@ -47,6 +42,11 @@ class AgileFUSE(Operations):
 		finally:
 			print '<-', op
 	
+	def fixpath(self, path):
+		path = os.path.normpath(path).replace('//','/')
+		if path=='': path=u'/'
+		return path
+
 	def create(self, path, mode):
 		'''f = self.sftp.open(path, 'w')
 		f.chmod(mode)
@@ -54,23 +54,48 @@ class AgileFUSE(Operations):
 		return 0
 
 	def getattr(self, path, fh=None):
-		astat = self.api.stat( path )
+		path=self.fixpath(path)
+		object=path
+		cache = self.cache_paths.get(path)
+		if cache is None:
+			cache = self.cache_paths.get(os.path.split(path)[0])
+
+		if cache is not None:
+			found=None
+			if cache['path']==path:
+				found=cache ; omode = 0755 | S_IFDIR ; found['name']=path ; olink=1
+			if not found:
+				for o in cache['files']:
+					if o['name']==os.path.split(path)[1]:
+						found=o ; omode = 0755 | S_IFREG ; olink = 1
+			if not found:
+				for o in cache['directories']:
+					if o['name']==os.path.split(path)[1]:
+						found=o ; omode = 0755 | S_IFDIR ; olink = 2
+			if found:
+				ret = dict( st_gid=20, st_uid=501, st_size=found['size'], st_nlink=olink, st_mode=omode, st_atime=time.time(), st_ctime=found['ctime'], st_mtime=found['mtime'] )
+				# print "getattr(%s) found %s -> %s" % (path,found['name'],repr(ret))
+				return ret
+
+		astat = self.agile.stat( path )
 		if 'type' in astat:
 			if astat['type']==1: # directory
-				if path=='/': return dict( st_gid=20, st_uid=501, st_mode=S_IFDIR | 0755, st_nlink=1, st_ctime=time(), st_mtime=time(), st_atime=time() )
-				else: return dict( st_gid=20, st_uid=501, st_mode=S_IFDIR | 0755, st_nlink=2, st_ctime=time(), st_mtime=time(), st_atime=time() )
+				if path=='/':
+					return dict( st_gid=20, st_uid=501, st_mode=S_IFDIR | 0755, st_nlink=1, st_ctime=time.time(), st_mtime=time.time(), st_atime=time.time() )
+				else:
+					return dict( st_gid=20, st_uid=501, st_mode=S_IFDIR | 0755, st_nlink=2, st_ctime=time.time(), st_mtime=time.time(), st_atime=time.time() )
 			elif astat['type']==2: # file
-				return dict( st_gid=20, st_uid=501, st_mode=S_IFREG | 0777, st_size=astat['size'], st_nlink=1, st_ctime=time(), st_mtime=time(), st_atime=time() )
+				return dict( st_gid=20, st_uid=501, st_mode=S_IFREG | 0777, st_size=astat['size'], st_nlink=1, st_ctime=time.time(), st_mtime=time.time(), st_atime=time.time() )
 		else:
 			return dict()
 
 	def mkdir(self, path, mode):
-		return self.api.makeDir(path)
+		return self.agile.makeDir(path)
 
 	def read(self, path, size, offset, fh):
-		print 'READ(%s,%d,%d)' % (path, size,offset)
-		url = EGRESS_BASE_URL+urllib2.quote(path.replace("//","/"))
-		print url
+		# print 'READ(%s,%d,%d)' % (path, size,offset)
+		url = self.agile.mapperurl+urllib2.quote(path.replace("//","/"))
+		# print url
 		req = urllib2.Request(url)
 		req.headers['Range'] = 'bytes=%s-%s' % (offset, offset+size)
 		f = urllib2.urlopen(req)
@@ -79,23 +104,21 @@ class AgileFUSE(Operations):
 		f.close()
 		return data # [offset:offset+size]
 
-	def update_cachepaths( self, path='./', dirs_only=False, files_only=False, overrideCache=False ):
+	def updatecachepath( self, path='/', dirs_only=False, files_only=False, overrideCache=False ):
 		djson=[] ; fjson=[] ; df=[] ; d=[] ; f=[] ; list=[]
+		path = self.fixpath(path)
 		if not path.startswith( '/' ): path=u'/%s' % path
 
 		cachepath = path
-		cache = self.cache_paths.get( cachepath )
-		caller = sys._getframe(1).f_code.co_name
-
-		print "[%s] update_cachepaths(%s)" % (caller, cachepath)
+		cache = self.cache_paths.get(cachepath)
 
 		if cache is None:
-			st = self.api.stat( path )
+			st = self.agile.stat( path )
 			if st['code'] == -1: return False # this is not a directory or file object
 			if st['type'] == 2: return False # this is a file object, not a directory
 
-			djson = self.api.listDir( path, 10000, 0, True)
-			fjson = self.api.listFile( path, 10000, 0, True )
+			djson = self.agile.listDir( path, 10000, 0, True)
+			fjson = self.agile.listFile( path, 10000, 0, True )
 
 			if not files_only:
 				for f in djson['list']:
@@ -105,7 +128,7 @@ class AgileFUSE(Operations):
 					  'created_time' : datetime.datetime.fromtimestamp(s['mtime']),
 					  'accessed_time' : datetime.datetime.fromtimestamp(time.time()),
 					  'modified_time' : datetime.datetime.fromtimestamp(s['mtime']),
-					  'st_mode' : 0700 | S_IFDIR
+					  'st_mode' : 0755 | S_IFDIR
 				   }
 				   list.append((f['name'], fst))
 
@@ -117,7 +140,7 @@ class AgileFUSE(Operations):
 					  'created_time' : datetime.datetime.fromtimestamp(s['mtime']),
 					  'accessed_time' : datetime.datetime.fromtimestamp(time.time()),
 					  'modified_time' : datetime.datetime.fromtimestamp(s['mtime']),
-					  'st_mode' : 0700 | S_IFREG
+					  'st_mode' : 0755 | S_IFREG
 				   }
 				   list.append((f['name'], fst))
 
@@ -132,36 +155,41 @@ class AgileFUSE(Operations):
 			jsonstr = jsonstr[0:len(jsonstr)-1]
 			jsonstr = jsonstr + ''' ] }'''
 
-			self.cache_paths[cachepath] = json.loads(jsonstr)
-			cache = self.cache_paths.get( cachepath )
-			print "[%s] WRITE CACHE %s -> %s\n" % (caller, cachepath, repr(cache))
-		return True
+			self.cache_paths[cachepath]=json.loads(jsonstr) 
+			return self.cache_paths.get(cachepath)
+		return self.cache_paths.get(cachepath)
 
 	def readdir(self, path, fh):
+		path=self.fixpath(path)
 		self.path=path
-		cache = self.cache_paths.get( path )
-		if cache is None:
-			if not update_cachepaths( path ):
-				return []
-		
-		listing = [u'.', u'..']
-		d=[o['name'] for o in cache['directories']] ; listing.extend(d)
-		f=[o['name'] for o in cache['files']] ; listing.extend(f)
+		cache = self.updatecachepath( path )
 
-		# for object in cache['objects']: listing.append(object['name'].encode('utf-8'))
+		# print "%s %s" % (repr(path), repr(fh))
+		# print "%s" % (repr(cache))
+		listing = ['.', '..']
+		for o in cache['directories']: 
+			object = o['name']
+			listing.append( object.encode('utf-8') )
+		for o in cache['files']: 
+			object = o['name']
+			listing.append( object.encode('utf-8') )
+
+		#d=[o['name'] for o in cache['directories']] ; listing.extend(d)
+		#f=[o['name'] for o in cache['files']] ; listing.extend(f)
+		# print repr(listing)
 		return listing 
 
 	def rename(self, old, new):
-		return self.api.rename(old, self.root + new)
+		return self.agile.rename(old, self.root + new)
 
 	def rmdir(self, path):
-		return self.api.rmdir(path)
+		return self.agile.rmdir(path)
 
 	def unlink(self, path):
-		return self.api.unlink(path)
+		return self.agile.unlink(path)
 
 	def write(self, path, data, offset, fh):
-		f = self.api.post(path, 'r+')
+		f = self.agile.post(path, 'r+')
 		f.seek(offset, 0)
 		f.write(data)
 		f.close()
