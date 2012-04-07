@@ -25,7 +25,7 @@ At present, it provides a read-only filesystem.  It has been tested on Linux and
 
 extra = {}
 
-setup(install_requires=['AgileCLU','fusepy','pylibmc'],
+setup(install_requires=['AgileCLU','fusepy','pylibmc','pycurl'],
 	name='agilefuse',
 	version=VERSION,
 	description='Agile Cloud Storage FUSE Mount',

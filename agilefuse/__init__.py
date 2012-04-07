@@ -18,10 +18,16 @@ from stat import S_IFDIR, S_IFREG
 from fuse import FUSE, Operations
 import urllib2
 import json
+import pycurl
 
-class AgileFUSE(Operations):
+write_buf = ''
+def	write_stream(buf):
+	global write_buf
+	write_buf += buf
 
-	def __init__(self):
+class 	AgileFUSE(Operations):
+
+	def	__init__(self):
 		self.agile = AgileCLU('agile')
 		self.mc = pylibmc.Client(['127.0.0.1:11211'], binary=True, behaviors={"tcp_nodelay": True, "ketama": True})
 		self.pool = pylibmc.ClientPool(self.mc, 10)
@@ -30,10 +36,10 @@ class AgileFUSE(Operations):
 		self.root = '/'
 		self.path = '/'
 	
-	def __del__(self):
+	def	__del__(self):
 		self.agile.logout()
 	
-	def __call__(self, op, path, *args):
+	def	__call__(self, op, path, *args):
 		print '->', op, path, args[0] if args else ''
 		ret = '[Unhandled Exception]'
 		try:
@@ -48,27 +54,27 @@ class AgileFUSE(Operations):
 		finally:
 			print '<-', op
 	
-	def fixpath(self, path):
+	def	fixpath(self, path):
 		path = os.path.normpath(path).replace('//','/')
 		if path=='': path=u'/'
 		return path
 
-	def getcache(self, path):
+	def	getcache(self, path):
 		with self.pool.reserve() as mc:
 			return mc.get( hashlib.sha256(path).hexdigest() )
 
-	def setcache(self, path, val):
+	def	setcache(self, path, val):
 		with self.pool.reserve() as mc:
 			mc.set( hashlib.sha256(path).hexdigest(), val )
 		return True
 
-	def create(self, path, mode):
+	def	create(self, path, mode):
 		'''f = self.sftp.open(path, 'w')
 		f.chmod(mode)
 		f.close()'''
 		return 0
 
-	def getattr(self, path, fh=None):
+	def	getattr(self, path, fh=None):
 		path=self.fixpath(path)
 		object=path
 		cache = self.getcache(path)
@@ -107,13 +113,14 @@ class AgileFUSE(Operations):
 		else:
 			return dict()
 
-	def mkdir(self, path, mode):
+	def	mkdir(self, path, mode):
 		return self.agile.makeDir(path)
 
-	def read(self, path, size, offset, fh):
-		# print 'READ(%s,%d,%d)' % (path, size,offset)
+	def	read(self, path, size, offset, fh):
+		global write_buf
+		print 'READ(%s,%d,%d)' % (path,size,offset)
 		url = self.agile.mapperurl+urllib2.quote(path.replace("//","/"))
-		# print url
+		'''
 		req = urllib2.Request(url)
 		req.headers['Range'] = 'bytes=%s-%s' % (offset, offset+size)
 		f = urllib2.urlopen(req)
@@ -121,8 +128,22 @@ class AgileFUSE(Operations):
 		# if offset + size > len(data): size = len(data) - offset
 		f.close()
 		return data # [offset:offset+size]
+		'''
+		USERAGENT='agilefuse %d-%d' % (offset, offset+size)
+		write_buf = ''
+		try:
+			curl = pycurl.Curl()
+			curl.setopt(pycurl.URL, url)
+			curl.setopt(pycurl.RANGE, '%d-%d' % (offset, offset+size))
+			curl.setopt(pycurl.USERAGENT, USERAGENT)
+			curl.setopt(pycurl.WRITEFUNCTION, write_stream)
+			curl.perform()
+			curl.close()
+		except:
+			raise
+		return write_buf
 
-	def updatecachepath( self, path='/', dirs_only=False, files_only=False, overrideCache=False ):
+	def	updatecachepath( self, path='/', dirs_only=False, files_only=False, overrideCache=False ):
 		djson=[] ; fjson=[] ; df=[] ; d=[] ; f=[] ; list=[]
 		path = self.fixpath(path)
 		if not path.startswith( '/' ): path=u'/%s' % path
@@ -178,7 +199,7 @@ class AgileFUSE(Operations):
 			return self.getcache(cachepath)
 		return self.getcache(cachepath)
 
-	def readdir(self, path, fh):
+	def	readdir(self, path, fh):
 		path=self.fixpath(path)
 		self.path=path
 		cache = self.updatecachepath( path )
@@ -198,16 +219,16 @@ class AgileFUSE(Operations):
 		# print repr(listing)
 		return listing 
 
-	def rename(self, old, new):
+	def	rename(self, old, new):
 		return self.agile.rename(old, self.root + new)
 
-	def rmdir(self, path):
+	def	rmdir(self, path):
 		return self.agile.rmdir(path)
 
-	def unlink(self, path):
+	def	unlink(self, path):
 		return self.agile.unlink(path)
 
-	def write(self, path, data, offset, fh):
+	def	write(self, path, data, offset, fh):
 		f = self.agile.post(path, 'r+')
 		f.seek(offset, 0)
 		f.write(data)
