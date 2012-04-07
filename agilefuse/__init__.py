@@ -136,7 +136,7 @@ class 	AgileFUSE(Operations):
 			# if offset + size > len(data): size = len(data) - offset
 			f.close()
 			return data # [offset:offset+size]
-		elif HTTP_READ_LIBRARY='curl':
+		elif HTTP_READ_LIBRARY=='curl':
 			USERAGENT='agilefuse %d-%d' % (offset, offset+size)
 			write_buf = ''
 			try:
