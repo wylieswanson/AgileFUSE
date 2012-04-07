@@ -7,7 +7,7 @@ import os,sys
 __version__ = "0.0.4"
 __author__ = "Wylie Swanson (wylie@pingzero.net)"
 
-DEBUG = True
+DEBUG = False
 
 if sys.platform == "darwin":
 	DEFAULT_MOUNT_POINT = "/Volumes/Agile Storage"

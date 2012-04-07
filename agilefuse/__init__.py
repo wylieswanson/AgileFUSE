@@ -68,6 +68,10 @@ class 	AgileFUSE(Operations):
 			mc.set( hashlib.sha256(path).hexdigest(), val )
 		return True
 
+	def	delcache(self, path):
+		with self.pool.reserve() as mc:
+			return mc.delete( hashlib.sha256(path).hexdigest() )
+
 	def	create(self, path, mode):
 		'''f = self.sftp.open(path, 'w')
 		f.chmod(mode)
@@ -226,7 +230,10 @@ class 	AgileFUSE(Operations):
 		return self.agile.rmdir(path)
 
 	def	unlink(self, path):
-		return self.agile.unlink(path)
+		result = self.agile.deleteFile(path)
+		self.delcache(os.path.split(path)[0])
+		self.updatecachepath(os.path.split(path)[0])
+		return result
 
 	def	write(self, path, data, offset, fh):
 		f = self.agile.post(path, 'r+')
