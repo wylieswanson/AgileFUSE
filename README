@@ -5,3 +5,12 @@ configuration files.
 
 At present, it provides a read-only filesystem.  It has been tested on 
 Linux and Mac OS X (and can be configured to appear on the OS X desktop).
+
+
+brew install memcached
+brew install libmemcached
+mkdir -p ~/Library/LaunchAgents
+cp /usr/local/Cellar/memcached/1.4.13/homebrew.mxcl.memcached.plist ~/Library/LaunchAgents/
+launchctl load -w ~/Library/LaunchAgents/homebrew.mxcl.memcached.plist
+sudo python ./setup.py install
+

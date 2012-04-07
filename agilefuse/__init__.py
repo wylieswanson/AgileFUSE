@@ -3,11 +3,14 @@ agilefuse: a filesystem abstraction of Agile Cloud Storage
 This module provides an abstract base class "AgileFUSE"
 """
 
-__version__ = "0.0.3"
+__version__ = "0.0.4"
 __author__ = "Wylie Swanson (wylie@pingzero.net)"
 
 
 import os
+import pylibmc
+#import memcache
+import hashlib
 from AgileCLU import AgileCLU
 import time
 import datetime
@@ -20,9 +23,12 @@ class AgileFUSE(Operations):
 
 	def __init__(self):
 		self.agile = AgileCLU('agile')
+		self.mc = pylibmc.Client(['127.0.0.1:11211'], binary=True, behaviors={"tcp_nodelay": True, "ketama": True})
+		self.pool = pylibmc.ClientPool(self.mc, 10)
+
+		#self.mc = memcache.Client(['127.0.0.1:11211'], debug=0)
 		self.root = '/'
 		self.path = '/'
-		self.cache_paths = {}
 	
 	def __del__(self):
 		self.agile.logout()
@@ -47,6 +53,15 @@ class AgileFUSE(Operations):
 		if path=='': path=u'/'
 		return path
 
+	def getcache(self, path):
+		with self.pool.reserve() as mc:
+			return mc.get( hashlib.sha256(path).hexdigest() )
+
+	def setcache(self, path, val):
+		with self.pool.reserve() as mc:
+			mc.set( hashlib.sha256(path).hexdigest(), val )
+		return True
+
 	def create(self, path, mode):
 		'''f = self.sftp.open(path, 'w')
 		f.chmod(mode)
@@ -56,9 +71,9 @@ class AgileFUSE(Operations):
 	def getattr(self, path, fh=None):
 		path=self.fixpath(path)
 		object=path
-		cache = self.cache_paths.get(path)
+		cache = self.getcache(path)
 		if cache is None:
-			cache = self.cache_paths.get(os.path.split(path)[0])
+			cache = self.getcache(os.path.split(path)[0])
 
 		if cache is not None:
 			found=None
@@ -76,7 +91,10 @@ class AgileFUSE(Operations):
 				ret = dict( st_gid=20, st_uid=501, st_size=found['size'], st_nlink=olink, st_mode=omode, st_atime=time.time(), st_ctime=found['ctime'], st_mtime=found['mtime'] )
 				# print "getattr(%s) found %s -> %s" % (path,found['name'],repr(ret))
 				return ret
+			else:
+				return dict()
 
+		print "MANUAL STAT - NO CACHE?"
 		astat = self.agile.stat( path )
 		if 'type' in astat:
 			if astat['type']==1: # directory
@@ -110,7 +128,7 @@ class AgileFUSE(Operations):
 		if not path.startswith( '/' ): path=u'/%s' % path
 
 		cachepath = path
-		cache = self.cache_paths.get(cachepath)
+		cache = self.getcache(cachepath)
 
 		if cache is None:
 			st = self.agile.stat( path )
@@ -155,9 +173,10 @@ class AgileFUSE(Operations):
 			jsonstr = jsonstr[0:len(jsonstr)-1]
 			jsonstr = jsonstr + ''' ] }'''
 
-			self.cache_paths[cachepath]=json.loads(jsonstr) 
-			return self.cache_paths.get(cachepath)
-		return self.cache_paths.get(cachepath)
+			self.setcache(cachepath,json.loads(jsonstr))
+
+			return self.getcache(cachepath)
+		return self.getcache(cachepath)
 
 	def readdir(self, path, fh):
 		path=self.fixpath(path)
@@ -196,6 +215,7 @@ class AgileFUSE(Operations):
 		return len(data)
 	
 	# Disable unused operations:
+	access = None
 	flush = None
 	getxattr = None
 	listxattr = None

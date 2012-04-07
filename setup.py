@@ -2,7 +2,7 @@
 from setuptools import setup
 import sys
 
-VERSION = "0.0.3"
+VERSION = "0.0.4"
 
 COMMANDS = ['agilefuse']
 
@@ -25,7 +25,7 @@ At present, it provides a read-only filesystem.  It has been tested on Linux and
 
 extra = {}
 
-setup(install_requires=['AgileCLU','fusepy'],
+setup(install_requires=['AgileCLU','fusepy','pylibmc'],
 	name='agilefuse',
 	version=VERSION,
 	description='Agile Cloud Storage FUSE Mount',

@@ -4,7 +4,7 @@ from agilefuse import AgileFUSE
 from fuse import FUSE, Operations
 import os,sys
 
-__version__ = "0.0.3"
+__version__ = "0.0.4"
 __author__ = "Wylie Swanson (wylie@pingzero.net)"
 
 DEBUG = False
@@ -17,7 +17,7 @@ else:
 FUSE_VOLNAME = 'Agile Storage'
 FUSE_AUTO_CACHE = True
 FUSE_NOTHREADS = False
-FUSE_RDONLY = True
+FUSE_RDONLY = False
 FUSE_NOBROWSE = False
 FUSE_NOAPPLEXATTR = False
 FUSE_APPLELOCAL = True
@@ -57,7 +57,7 @@ if __name__ == "__main__":
 		unmountStr = "Unmount it with `fusermount -u %s' (without quotes)." % mountPoint
 
 	kwargs['auto_cache'] = FUSE_AUTO_CACHE
-	kwargs['nothreads'] = FUSE_NOTHREADS
+	if FUSE_NOTHREADS: kwargs['nothreads'] = FUSE_NOTHREADS
 
 	print unmountStr
 	fuse = FUSE(AgileFUSE(), mountPoint, **kwargs )
