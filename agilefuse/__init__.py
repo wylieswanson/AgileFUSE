@@ -20,6 +20,9 @@ import urllib2
 import json
 import pycurl
 
+HTTP_READ_LIBRARY='urllib'
+# HTTP_READ_LIBRARY='curl'
+
 write_buf = ''
 def	write_stream(buf):
 	global write_buf
@@ -124,28 +127,29 @@ class 	AgileFUSE(Operations):
 		global write_buf
 		print 'READ(%s,%d,%d)' % (path,size,offset)
 		url = self.agile.mapperurl+urllib2.quote(path.replace("//","/"))
-		'''
-		req = urllib2.Request(url)
-		req.headers['Range'] = 'bytes=%s-%s' % (offset, offset+size)
-		f = urllib2.urlopen(req)
-		data = f.read()
-		# if offset + size > len(data): size = len(data) - offset
-		f.close()
-		return data # [offset:offset+size]
-		'''
-		USERAGENT='agilefuse %d-%d' % (offset, offset+size)
-		write_buf = ''
-		try:
-			curl = pycurl.Curl()
-			curl.setopt(pycurl.URL, url)
-			curl.setopt(pycurl.RANGE, '%d-%d' % (offset, offset+size))
-			curl.setopt(pycurl.USERAGENT, USERAGENT)
-			curl.setopt(pycurl.WRITEFUNCTION, write_stream)
-			curl.perform()
-			curl.close()
-		except:
-			raise
-		return write_buf
+
+		if HTTP_READ_LIBRARY=='urllib':
+			req = urllib2.Request(url)
+			req.headers['Range'] = 'bytes=%s-%s' % (offset, offset+size)
+			f = urllib2.urlopen(req)
+			data = f.read()
+			# if offset + size > len(data): size = len(data) - offset
+			f.close()
+			return data # [offset:offset+size]
+		elif HTTP_READ_LIBRARY='curl':
+			USERAGENT='agilefuse %d-%d' % (offset, offset+size)
+			write_buf = ''
+			try:
+				curl = pycurl.Curl()
+				curl.setopt(pycurl.URL, url)
+				curl.setopt(pycurl.RANGE, '%d-%d' % (offset, offset+size))
+				curl.setopt(pycurl.USERAGENT, USERAGENT)
+				curl.setopt(pycurl.WRITEFUNCTION, write_stream)
+				curl.perform()
+				curl.close()
+			except:
+				raise
+			return write_buf
 
 	def	updatecachepath( self, path='/', dirs_only=False, files_only=False, overrideCache=False ):
 		djson=[] ; fjson=[] ; df=[] ; d=[] ; f=[] ; list=[]
