@@ -98,7 +98,7 @@ class 	AgileFUSE(Operations):
 					if o['name']==os.path.split(path)[1]:
 						found=o ; omode = 0755 | S_IFDIR ; olink = 2
 			if found:
-				ret = dict( st_gid=20, st_uid=501, st_size=found['size'], st_nlink=olink, st_mode=omode, st_atime=time.time(), st_ctime=found['ctime'], st_mtime=found['mtime'] )
+				ret = dict( st_gid=os.getgid(), st_uid=os.getuid(), st_size=found['size'], st_nlink=olink, st_mode=omode, st_atime=time.time(), st_ctime=found['ctime'], st_mtime=found['mtime'] )
 				# print "getattr(%s) found %s -> %s" % (path,found['name'],repr(ret))
 				return ret
 			else:
@@ -109,11 +109,11 @@ class 	AgileFUSE(Operations):
 		if 'type' in astat:
 			if astat['type']==1: # directory
 				if path=='/':
-					return dict( st_gid=20, st_uid=501, st_mode=S_IFDIR | 0755, st_nlink=1, st_ctime=time.time(), st_mtime=time.time(), st_atime=time.time() )
+					return dict( st_gid=os.getgid(), st_uid=os.getuid(), st_mode=S_IFDIR | 0755, st_nlink=1, st_ctime=time.time(), st_mtime=time.time(), st_atime=time.time() )
 				else:
-					return dict( st_gid=20, st_uid=501, st_mode=S_IFDIR | 0755, st_nlink=2, st_ctime=time.time(), st_mtime=time.time(), st_atime=time.time() )
+					return dict( st_gid=os.getgid(), st_uid=os.getuid(), st_mode=S_IFDIR | 0755, st_nlink=2, st_ctime=time.time(), st_mtime=time.time(), st_atime=time.time() )
 			elif astat['type']==2: # file
-				return dict( st_gid=20, st_uid=501, st_mode=S_IFREG | 0777, st_size=astat['size'], st_nlink=1, st_ctime=time.time(), st_mtime=time.time(), st_atime=time.time() )
+				return dict( st_gid=os.getgid(), st_uid=os.getuid(), st_mode=S_IFREG | 0777, st_size=astat['size'], st_nlink=1, st_ctime=time.time(), st_mtime=time.time(), st_atime=time.time() )
 		else:
 			return dict()
 

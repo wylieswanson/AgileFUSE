@@ -7,6 +7,8 @@ At present, it provides a read-only filesystem.  It has been tested on
 Linux and Mac OS X (and can be configured to appear on the OS X desktop).
 
 
+For Mac OS X
+------------
 brew install memcached
 brew install libmemcached
 mkdir -p ~/Library/LaunchAgents
@@ -14,3 +16,7 @@ cp /usr/local/Cellar/memcached/1.4.13/homebrew.mxcl.memcached.plist ~/Library/La
 launchctl load -w ~/Library/LaunchAgents/homebrew.mxcl.memcached.plist
 sudo python ./setup.py install
 
+For Ubuntu Linux
+----------------
+sudo apt-get install memcached libmemcached-dev
+sudo python ./setup.py install
