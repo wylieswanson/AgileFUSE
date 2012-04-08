@@ -34,6 +34,8 @@ class 	AgileFUSE(Operations):
 		self.agile = AgileCLU('agile')
 		self.mc = pylibmc.Client(['127.0.0.1:11211'], binary=True, behaviors={"tcp_nodelay": True, "ketama": True})
 		self.pool = pylibmc.ClientPool(self.mc, 10)
+		self.cache = {}
+		self.key = None
 
 		#self.mc = memcache.Client(['127.0.0.1:11211'], debug=0)
 		self.root = '/'
@@ -63,17 +65,31 @@ class 	AgileFUSE(Operations):
 		return path
 
 	def	getcache(self, path):
+		path = self.fixpath(path)
+		key = hashlib.sha256(path).hexdigest()
+		if self.key==key: return self.cache
 		with self.pool.reserve() as mc:
-			return mc.get( hashlib.sha256(path).hexdigest() )
+			print "- getcache %s (%s)" % (path, key)
+			self.key = key
+			self.cache = mc.get( key )
+			return self.cache
 
 	def	setcache(self, path, val):
+		path = self.fixpath(path)
+		key = hashlib.sha256(path).hexdigest()
+		self.key = key
+		self.cache = val
 		with self.pool.reserve() as mc:
-			mc.set( hashlib.sha256(path).hexdigest(), val )
+			print "- setcache %s (%s) = %s" % (path, key, val)
+			mc.set( key, val )
 		return True
 
 	def	delcache(self, path):
+		path = self.fixpath(path)
+		key = hashlib.sha256(path).hexdigest()
+		print "- delcache %s (%s)" % (path, key)
 		with self.pool.reserve() as mc:
-			return mc.delete( hashlib.sha256(path).hexdigest() )
+			return mc.delete( key )
 
 	def	create(self, path, mode):
 		'''f = self.sftp.open(path, 'w')
@@ -167,30 +183,6 @@ class 	AgileFUSE(Operations):
 			djson = self.agile.listDir( path, 10000, 0, True)
 			fjson = self.agile.listFile( path, 10000, 0, True )
 
-			if not files_only:
-				for f in djson['list']:
-				   s = f['stat']
-				   fst = {
-					  'size' : s['size'],
-					  'created_time' : datetime.datetime.fromtimestamp(s['mtime']),
-					  'accessed_time' : datetime.datetime.fromtimestamp(time.time()),
-					  'modified_time' : datetime.datetime.fromtimestamp(s['mtime']),
-					  'st_mode' : 0755 | S_IFDIR
-				   }
-				   list.append((f['name'], fst))
-
-			if not dirs_only: 
-				for f in fjson['list']:
-				   s = f['stat']
-				   fst = {
-					  'size' : s['size'],
-					  'created_time' : datetime.datetime.fromtimestamp(s['mtime']),
-					  'accessed_time' : datetime.datetime.fromtimestamp(time.time()),
-					  'modified_time' : datetime.datetime.fromtimestamp(s['mtime']),
-					  'st_mode' : 0755 | S_IFREG
-				   }
-				   list.append((f['name'], fst))
-
 			jsonstr = '''{ "path": "'''+path+'''", "size": '''+str(st.get('size', 0))+''', "ctime": '''+str(st['ctime'])+''', "mtime": '''+str(st['mtime'])+''', '''
 			jsonstr = jsonstr + '''"files": [ '''
 			for object in fjson['list']: 
@@ -228,10 +220,15 @@ class 	AgileFUSE(Operations):
 		return listing 
 
 	def	rename(self, old, new):
+		print "rename %s %s" % (old, new)
 		return self.agile.rename(old, self.root + new)
 
 	def	rmdir(self, path):
-		return self.agile.rmdir(path)
+		result = self.agile.deleteDir(path)
+		self.delcache(path)
+		self.delcache(os.path.split(path)[0])
+		self.updatecachepath(os.path.split(path)[0])
+		return result
 
 	def	unlink(self, path):
 		result = self.agile.deleteFile(path)

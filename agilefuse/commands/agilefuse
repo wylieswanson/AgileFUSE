@@ -3,11 +3,10 @@
 from agilefuse import AgileFUSE
 from fuse import FUSE, Operations
 import os,sys
+from optparse import OptionParser, OptionGroup
 
 __version__ = "0.0.4"
 __author__ = "Wylie Swanson (wylie@pingzero.net)"
-
-DEBUG = False
 
 if sys.platform == "darwin":
 	DEFAULT_MOUNT_POINT = "/Volumes/Agile Storage"
@@ -15,32 +14,41 @@ else:
 	DEFAULT_MOUNT_POINT = "/mnt/Agile"
 
 FUSE_VOLNAME = 'Agile Storage'
-FUSE_AUTO_CACHE = True
+FUSE_AUTO_CACHE = False # was True
 FUSE_NOTHREADS = False
 FUSE_RDONLY = False
 FUSE_NOBROWSE = False
 FUSE_NOAPPLEXATTR = False
 FUSE_APPLELOCAL = True
 
-if __name__ == "__main__":
-	if len(sys.argv) == 1:
-		mountPoint = DEFAULT_MOUNT_POINT
-		if not os.path.isdir(mountPoint):
-			print "Making directory", mountPoint, "for AgileFUSE"
-			os.mkdir(mountPoint)
-	elif len(sys.argv) == 2:
-		mountPoint = sys.argv[1]
-		if not os.path.isdir(mountPoint):
-			print "%s: No such directory. Create it before trying again." % mountPoint
+def	main():
+
+	parser = OptionParser( usage= "usage: %prog [options] mountpath", version="%prog "+str(__version__))
+	parser.add_option("-d", "--debug", action="store_true", dest="debug", help="run in debug mode", default=False)
+	parser.add_option("--autocache", action="store_true", dest="autocache", help="fuse additionally detect modification time changes", default=False)
+	parser.add_option("--nothreads", action="store_true", dest="nothreads", help="run in single-threaded mode", default=False)
+	parser.add_option("--readonly", action="store_true", dest="readonly", help="mount in read-only mode", default=False)
+	parser.add_option("--nobrowse", action="store_true", dest="nobrowse", help="stop finder from browsing into volume", default=False)
+
+	(options, args) = parser.parse_args()
+
+	if len(args)>1: parser.error("Wrong number of arguments. Exiting.")
+	if len(args)==1:
+		mountpath = args[0]
+		if not os.path.isdir(mountpath):
+			print "%s: No such directory. Create it before trying again." % mountpath
 			sys.exit(1)
-	else:
-		print "usage: %s [mountpoint]" % sys.argv[0]
-		sys.exit(1)
+	elif len(args)==0:
+		mountpath = DEFAULT_MOUNT_POINT
+		if not os.path.isdir(mountpath):
+			print "Making directory", mountpath, "for AgileFUSE"
+			os.mkdir(mountpath)
 
 	kwargs = dict()
-	if DEBUG: 
+	if options.debug: 
 		kwargs['foreground'] = True
-	print "Mounting AgileFUSE at %s." % mountPoint
+
+	print "Mounting AgileFUSE at %s." % mountpath
 	if sys.platform == "darwin":
 		unmountStr = "When done, eject it from the Finder or run 'unmount %s'." % "AgileFUSE"
 		kwargs['volname'] = FUSE_VOLNAME
@@ -54,10 +62,13 @@ if __name__ == "__main__":
 			kwargs['modules'] = 'volicon'
 			kwargs['iconpath'] = '/etc/agile/AgileVolume.icns'
 	else:
-		unmountStr = "Unmount it with `fusermount -u %s' (without quotes)." % mountPoint
+		unmountStr = "Unmount it with `fusermount -u %s' (without quotes)." % mountpath
 
-	kwargs['auto_cache'] = FUSE_AUTO_CACHE
+	if FUSE_AUTO_CACHE: kwargs['auto_cache'] = FUSE_AUTO_CACHE
 	if FUSE_NOTHREADS: kwargs['nothreads'] = FUSE_NOTHREADS
 
 	print unmountStr
-	fuse = FUSE(AgileFUSE(), mountPoint, **kwargs )
+	fuse = FUSE(AgileFUSE(), mountpath, **kwargs )
+
+if __name__ == "__main__":
+	main()
