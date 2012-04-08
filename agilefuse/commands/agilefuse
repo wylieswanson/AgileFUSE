@@ -14,10 +14,6 @@ else:
 	DEFAULT_MOUNT_POINT = "/mnt/Agile"
 
 FUSE_VOLNAME = 'Agile Storage'
-FUSE_AUTO_CACHE = False # was True
-FUSE_NOTHREADS = False
-FUSE_RDONLY = False
-FUSE_NOBROWSE = False
 FUSE_NOAPPLEXATTR = False
 FUSE_APPLELOCAL = True
 
@@ -25,14 +21,14 @@ def	main():
 
 	parser = OptionParser( usage= "usage: %prog [options] mountpath", version="%prog "+str(__version__))
 	parser.add_option("-d", "--debug", action="store_true", dest="debug", help="run in debug mode", default=False)
-	parser.add_option("--autocache", action="store_true", dest="autocache", help="fuse additionally detect modification time changes", default=False)
+	parser.add_option("--autocache", action="store_true", dest="autocache", help="additionally detect modification time changes with getattr", default=False)
 	parser.add_option("--nothreads", action="store_true", dest="nothreads", help="run in single-threaded mode", default=False)
 	parser.add_option("--readonly", action="store_true", dest="readonly", help="mount in read-only mode", default=False)
 	parser.add_option("--nobrowse", action="store_true", dest="nobrowse", help="stop finder from browsing into volume", default=False)
 
 	(options, args) = parser.parse_args()
 
-	if len(args)>1: parser.error("Wrong number of arguments. Exiting.")
+	if len(args)>1: parser.error("Wrong number of arguments -- use '%s -h' for help" % (sys.argv[0]))
 	if len(args)==1:
 		mountpath = args[0]
 		if not os.path.isdir(mountpath):
@@ -56,16 +52,16 @@ def	main():
 		if FUSE_APPLELOCAL: kwargs['local'] = True
 		if FUSE_NOAPPLEXATTR: kwargs['noapplexattr'] = True
 		kwargs['negative_vncache'] = True
-		if FUSE_NOBROWSE: kwargs['nobrowse'] = FUSE_NOBROWSE
-		if FUSE_RDONLY: kwargs['rdonly'] = FUSE_RDONLY
+		if options.nobrowse: kwargs['nobrowse'] = options.nobrowse
+		if options.readonly: kwargs['rdonly'] = options.readonly
 		if os.path.isfile("/etc/agile/AgileVolume.icns"):
 			kwargs['modules'] = 'volicon'
 			kwargs['iconpath'] = '/etc/agile/AgileVolume.icns'
 	else:
 		unmountStr = "Unmount it with `fusermount -u %s' (without quotes)." % mountpath
 
-	if FUSE_AUTO_CACHE: kwargs['auto_cache'] = FUSE_AUTO_CACHE
-	if FUSE_NOTHREADS: kwargs['nothreads'] = FUSE_NOTHREADS
+	if options.autocache: kwargs['auto_cache'] = options.autocache
+	if options.nothreads: kwargs['nothreads'] = options.nothreads
 
 	print unmountStr
 	fuse = FUSE(AgileFUSE(), mountpath, **kwargs )
