@@ -5,66 +5,88 @@ from fuse import FUSE, Operations
 import os,sys
 from optparse import OptionParser, OptionGroup
 
-__version__ = "0.0.4"
+__version__ = "0.0.5"
 __author__ = "Wylie Swanson (wylie@pingzero.net)"
-
-if sys.platform == "darwin":
-	DEFAULT_MOUNT_POINT = "/Volumes/Agile Storage"
-else:
-	DEFAULT_MOUNT_POINT = "/mnt/Agile"
-
-FUSE_VOLNAME = 'Agile Storage'
-FUSE_NOAPPLEXATTR = False
-FUSE_APPLELOCAL = True
 
 def	main():
 
-	parser = OptionParser( usage= "usage: %prog [options] mountpath", version="%prog "+str(__version__))
+	if sys.platform == "darwin": DEFAULT_MOUNT = "/Volumes/Agile Storage"
+	else: DEFAULT_MOUNT = "/mnt/agile"
+
+	parser = OptionParser( usage= "usage: %prog [options]", version="%prog "+str(__version__))
+
 	parser.add_option("-d", "--debug", action="store_true", dest="debug", help="run in debug mode", default=False)
-	parser.add_option("--autocache", action="store_true", dest="autocache", help="additionally detect modification time changes with getattr", default=False)
+	parser.add_option("-v", "--verbose", action="count", dest="verbosity", help="verbose operation,  more -v's increase verbosity")
 	parser.add_option("--nothreads", action="store_true", dest="nothreads", help="run in single-threaded mode", default=False)
-	parser.add_option("--readonly", action="store_true", dest="readonly", help="mount in read-only mode", default=False)
-	parser.add_option("--nobrowse", action="store_true", dest="nobrowse", help="stop finder from browsing into volume", default=False)
+	parser.add_option("-m", "--mount", dest="mount", help="mount path, default: '"+DEFAULT_MOUNT+"'", default=DEFAULT_MOUNT)
+	parser.add_option("-r", "--readlib", dest="readlib", help="read library: urllib or curl [default: %default]", default="urllib")
+
+	group = OptionGroup(parser, "Apple OS X/Darwin options", "Use these options to create the experience you are looking for on Mac.")
+	group.add_option("--volname", dest="volname", help="setup a volume name, default: 'Agile Storage'", default="Agile Storage")
+	group.add_option("-i", "--icon", dest="volicon", help="setup a volume icon, default: '/etc/agile/AgileVolume.icns'", default="/etc/agile/AgileVolume.icns")
+	group.add_option("--applelocal", action="store_true", dest="applelocal", help="treat as a local filesystem", default=True)
+	group.add_option("--autocache", action="store_true", dest="autocache", help="additionally detect modification time changes with getattr", default=False)
+	group.add_option("--defer_permissions", action="store_true", dest="defer_permissions", help="defer permissions to the remote", default=True)
+	group.add_option("--negative_vncache", action="store_true", dest="negative_vncache", help="negative_vncache", default=True)
+	group.add_option("--nobrowse", action="store_true", dest="nobrowse", help="stop finder from browsing into volume", default=False)
+	group.add_option("--noapplexattr", action="store_true", dest="noapplexattr", help="noapplexattr", default=False)
+	group.add_option("--noappledouble", action="store_true", dest="noappledouble", help="noappledouble", default=True)
+	group.add_option("--nolocalcaches", action="store_true", dest="nolocalcaches", help="disables unified buffer cache, vnode name caching, attr caching, and readaheads", default=False)
+	group.add_option("--iosize", dest="iosize", help="iosize, where N is the I/O size in bytes", default="1048576")
+	group.add_option("--readonly", action="store_true", dest="readonly", help="mount in read-only mode", default=False)
+	parser.add_option_group(group)
 
 	(options, args) = parser.parse_args()
 
-	if len(args)>1: parser.error("Wrong number of arguments -- use '%s -h' for help" % (sys.argv[0]))
-	if len(args)==1:
-		mountpath = args[0]
-		if not os.path.isdir(mountpath):
-			print "%s: No such directory. Create it before trying again." % mountpath
-			sys.exit(1)
-	elif len(args)==0:
-		mountpath = DEFAULT_MOUNT_POINT
-		if not os.path.isdir(mountpath):
-			print "Making directory", mountpath, "for AgileFUSE"
-			os.mkdir(mountpath)
+	if len(args)<>0: parser.error("Wrong number of arguments -- use '%s -h' for help" % (sys.argv[0]))
+
+	if options.readlib not in ['urllib','curl']:
+		print "%s: invalid read library, use 'urllib' or 'curl'." % options.readlib
+		sys.exit(1)
+	if not os.path.isdir(options.mount):
+		if options.verbosity: 
+			print "%s: No such directory, creating it..." % options.mount
+		try:
+			os.mkdir(options.mount)
+		except os.error, e:
+			if e.errno != errno.EEXIST:
+				raise
 
 	kwargs = dict()
-	if options.debug: 
-		kwargs['foreground'] = True
+	if options.debug: kwargs['foreground'] = True
 
-	print "Mounting AgileFUSE at %s." % mountpath
+	if options.verbosity:
+		print "Mounting: %s." % options.mount
+		if options.verbosity>1: 
+			print str(options)
 	if sys.platform == "darwin":
 		unmountStr = "When done, eject it from the Finder or run 'unmount %s'." % "AgileFUSE"
-		kwargs['volname'] = FUSE_VOLNAME
-		kwargs['noappledouble'] = True
-		if FUSE_APPLELOCAL: kwargs['local'] = True
-		if FUSE_NOAPPLEXATTR: kwargs['noapplexattr'] = True
-		kwargs['negative_vncache'] = True
+		kwargs['volname'] = options.volname
+		if options.noappledouble: kwargs['noappledouble'] = True
+		if options.applelocal: kwargs['local'] = options.applelocal
+		if options.noapplexattr: kwargs['noapplexattr'] = options.noapplexattr
+		if options.negative_vncache: kwargs['negative_vncache'] = options.negative_vncache
 		if options.nobrowse: kwargs['nobrowse'] = options.nobrowse
 		if options.readonly: kwargs['rdonly'] = options.readonly
-		if os.path.isfile("/etc/agile/AgileVolume.icns"):
-			kwargs['modules'] = 'volicon'
-			kwargs['iconpath'] = '/etc/agile/AgileVolume.icns'
+		if options.iosize: kwargs['iosize'] = options.iosize
+		if options.defer_permissions: kwargs['defer_permissions'] = options.defer_permissions
+		if options.volicon:
+			if os.path.isfile(options.volicon):
+				kwargs['modules'] = 'volicon'
+				kwargs['iconpath'] = options.volicon
+			else:
+				print "file not found: %s, volume icon is unavailable."
 	else:
-		unmountStr = "Unmount it with `fusermount -u %s' (without quotes)." % mountpath
+		unmountStr = "Unmount it with `fusermount -u %s' (without quotes)." % options.mount
 
 	if options.autocache: kwargs['auto_cache'] = options.autocache
 	if options.nothreads: kwargs['nothreads'] = options.nothreads
 
-	print unmountStr
-	fuse = FUSE(AgileFUSE(), mountpath, **kwargs )
+	if options.verbosity:
+		print unmountStr
+
+	result = AgileFUSE(options.verbosity).updatecachepath('/')
+	fuse = FUSE(AgileFUSE(options.readlib, options.verbosity), options.mount, **kwargs )
 
 if __name__ == "__main__":
 	main()

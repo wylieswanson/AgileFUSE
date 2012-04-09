@@ -3,22 +3,13 @@ agilefuse: a filesystem abstraction of Agile Cloud Storage
 This module provides an abstract base class "AgileFUSE"
 """
 
-__version__ = "0.0.4"
+__version__ = "0.0.5"
 __author__ = "Wylie Swanson (wylie@pingzero.net)"
 
-
-import os
-import pylibmc
-#import memcache
-import hashlib
 from AgileCLU import AgileCLU
-import time
-import datetime
+import os, time, datetime, pylibmc, hashlib, json, urllib2, pycurl
 from stat import S_IFDIR, S_IFREG
 from fuse import FUSE, Operations
-import urllib2
-import json
-import pycurl
 
 HTTP_READ_LIBRARY='urllib'
 # HTTP_READ_LIBRARY='curl'
@@ -30,14 +21,15 @@ def	write_stream(buf):
 
 class 	AgileFUSE(Operations):
 
-	def	__init__(self):
+	def	__init__(self, readlib='urllib', verbosity=0):
+		self.verbosity = verbosity
+		self.readlib = readlib
 		self.agile = AgileCLU('agile')
 		self.mc = pylibmc.Client(['127.0.0.1:11211'], binary=True, behaviors={"tcp_nodelay": True, "ketama": True})
 		self.pool = pylibmc.ClientPool(self.mc, 10)
 		self.cache = {}
 		self.key = None
 
-		#self.mc = memcache.Client(['127.0.0.1:11211'], debug=0)
 		self.root = '/'
 		self.path = '/'
 	
@@ -45,7 +37,7 @@ class 	AgileFUSE(Operations):
 		self.agile.logout()
 	
 	def	__call__(self, op, path, *args):
-		print '->', op, path, args[0] if args else ''
+		if self.verbosity: print '->', op, path, args[0] if args else ''
 		ret = '[Unhandled Exception]'
 		try:
 			ret = getattr(self, op)(self.root + path, *args)
@@ -57,7 +49,7 @@ class 	AgileFUSE(Operations):
 			ret = str(e)
 			raise OSError(*e.args)
 		finally:
-			print '<-', op
+			if self.verbosity: print '<-', op
 	
 	def	fixpath(self, path):
 		path = os.path.normpath(path).replace('//','/')
@@ -69,7 +61,7 @@ class 	AgileFUSE(Operations):
 		key = hashlib.sha256(path).hexdigest()
 		if self.key==key: return self.cache
 		with self.pool.reserve() as mc:
-			print "- getcache %s (%s)" % (path, key)
+			if self.verbosity: print "- getcache %s (%s)" % (path, key)
 			self.key = key
 			self.cache = mc.get( key )
 			return self.cache
@@ -80,14 +72,14 @@ class 	AgileFUSE(Operations):
 		self.key = key
 		self.cache = val
 		with self.pool.reserve() as mc:
-			print "- setcache %s (%s) = %s" % (path, key, val)
-			mc.set( key, val )
+			if self.verbosity: print "- setcache %s (%s) = %s" % (path, key, val)
+			mc.set( key, val, 300, 256 )
 		return True
 
 	def	delcache(self, path):
 		path = self.fixpath(path)
 		key = hashlib.sha256(path).hexdigest()
-		print "- delcache %s (%s)" % (path, key)
+		if self.verbosity: print "- delcache %s (%s)" % (path, key)
 		with self.pool.reserve() as mc:
 			return mc.delete( key )
 
@@ -123,7 +115,7 @@ class 	AgileFUSE(Operations):
 			else:
 				return dict()
 
-		print "MANUAL STAT - NO CACHE?"
+		if self.verbosity: print "MANUAL STAT - NO CACHE (%s)?" % (path)
 		astat = self.agile.stat( path )
 		if 'type' in astat:
 			if astat['type']==1: # directory
@@ -141,19 +133,19 @@ class 	AgileFUSE(Operations):
 
 	def	read(self, path, size, offset, fh):
 		global write_buf
-		print 'READ(%s,%d,%d)' % (path,size,offset)
 		url = self.agile.mapperurl+urllib2.quote(path.replace("//","/"))
+		if self.verbosity: print 'READ(%s,%d,%d)' % (path.replace("//","/"),size,offset)
 
-		if HTTP_READ_LIBRARY=='urllib':
+		USERAGENT='AgileFUSE %s (%d-%d)' % (__version__, offset, offset+size)
+		if self.readlib=='urllib':
 			req = urllib2.Request(url)
 			req.headers['Range'] = 'bytes=%s-%s' % (offset, offset+size)
+			req.headers['User-Agent'] = USERAGENT
 			f = urllib2.urlopen(req)
 			data = f.read()
-			# if offset + size > len(data): size = len(data) - offset
 			f.close()
 			return data # [offset:offset+size]
-		elif HTTP_READ_LIBRARY=='curl':
-			USERAGENT='agilefuse %d-%d' % (offset, offset+size)
+		elif self.readlib=='curl':
 			write_buf = ''
 			try:
 				curl = pycurl.Curl()
@@ -166,6 +158,9 @@ class 	AgileFUSE(Operations):
 			except:
 				raise
 			return write_buf
+		else:
+			if verbosity: print "%s: invalid read library" % (self.readlib)
+			return False
 
 	def	updatecachepath( self, path='/', dirs_only=False, files_only=False, overrideCache=False ):
 		djson=[] ; fjson=[] ; df=[] ; d=[] ; f=[] ; list=[]
@@ -220,7 +215,7 @@ class 	AgileFUSE(Operations):
 		return listing 
 
 	def	rename(self, old, new):
-		print "rename %s %s" % (old, new)
+		if self.verbosity: print "rename %s %s" % (old, new)
 		return self.agile.rename(old, self.root + new)
 
 	def	rmdir(self, path):
