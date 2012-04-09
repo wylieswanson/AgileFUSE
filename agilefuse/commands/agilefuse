@@ -2,7 +2,7 @@
 
 from agilefuse import AgileFUSE
 from fuse import FUSE, Operations
-import os,sys
+import os,sys,errno
 from optparse import OptionParser, OptionGroup
 
 __version__ = "0.0.5"
@@ -50,7 +50,8 @@ def	main():
 			os.mkdir(options.mount)
 		except os.error, e:
 			if e.errno != errno.EEXIST:
-				raise
+				print e
+				sys.exit(1)
 
 	kwargs = dict()
 	if options.debug: kwargs['foreground'] = True
