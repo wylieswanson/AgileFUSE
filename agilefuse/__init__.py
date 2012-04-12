@@ -7,12 +7,51 @@ __version__ = "0.0.5"
 __author__ = "Wylie Swanson (wylie@pingzero.net)"
 
 from AgileCLU import AgileCLU
-import os, time, datetime, pylibmc, hashlib, json, urllib2, pycurl
+import os, time, datetime, pylibmc, hashlib, json, urllib2, pycurl, socket
 from stat import S_IFDIR, S_IFREG
 from fuse import FUSE, Operations
 
-HTTP_READ_LIBRARY='urllib'
-# HTTP_READ_LIBRARY='curl'
+
+class	AgileReader(object):
+
+	def	__init__(self, sockpath=None, autostart=True):
+		try:
+			self.sockpath = sockpath
+			if autostart:
+				self.setup()
+				self.connect()
+		except:
+			raise
+
+	def	setup(self):
+		try:
+			self.socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+		except:
+			raise
+
+	def	connect(self):
+		try:
+			self.socket.connect(self.sockpath)
+		except:
+			raise
+
+	def	create_payload(self, url=None, offset=None, size=None):
+		try:
+			payload_dict = {}
+			payload_dict['url'] = url
+			payload_dict['offset'] = offset
+			payload_dict['size'] = size
+			payload_bin = json.dumps(payload_dict)
+			return payload_bin
+		except:
+			raise
+
+	def	send_request(self, payload):
+		try:
+			self.socket.send(payload)
+		except:
+			raise
+
 
 write_buf = ''
 def	write_stream(buf):
@@ -131,13 +170,16 @@ class 	AgileFUSE(Operations):
 	def	mkdir(self, path, mode):
 		return self.agile.makeDir(path)
 
-	def	read(self, path, size, offset, fh):
+	def	oldread(self, path, size, offset, fh):
 		global write_buf
 		url = self.agile.mapperurl+urllib2.quote(path.replace("//","/"))
 		if self.verbosity: print 'READ(%s,%d,%d)' % (path.replace("//","/"),size,offset)
 
 		USERAGENT='AgileFUSE %s (%d-%d)' % (__version__, offset, offset+size)
 		if self.readlib=='urllib':
+			# proxy = urllib2.ProxyHandler({'http': 'http://localhost:6081'})
+			# opener = urllib2.build_opener(proxy)
+			# urllib2.install_opener(opener)
 			req = urllib2.Request(url)
 			req.headers['Range'] = 'bytes=%s-%s' % (offset, offset+size)
 			req.headers['User-Agent'] = USERAGENT
@@ -161,6 +203,30 @@ class 	AgileFUSE(Operations):
 		else:
 			if verbosity: print "%s: invalid read library" % (self.readlib)
 			return False
+
+
+	def	read(self, path, size, offset, fh):
+		MAX_RECV=4096
+
+		url = self.agile.mapperurl+urllib2.quote(path.replace("//","/"))
+		if self.verbosity: print 'READ(%s,%d,%d)' % (path.replace("//","/"),size,offset)
+
+		data = ''
+		reader = AgileReader(sockpath='/tmp/lama-readerd.sock')
+		if self.verbosity: print repr(reader)
+		payload = reader.create_payload(url=url, offset=offset, size=size)
+		if self.verbosity: print "created payload, len: %d" %(len(payload))
+		if len(payload):
+			while True:
+				data += reader.socket.recv(MAX_RECV)
+				if not data: break
+				if self.verbosity: print "recvd %d len packet" % (len(data))
+			reader.socket.close()
+		else:
+			if self.verbosity: print "ERROR: bad payload"
+		if self.verbosity: print "returning data, len: %d" % (len(data))
+		return data
+
 
 	def	updatecachepath( self, path='/', dirs_only=False, files_only=False, overrideCache=False ):
 		djson=[] ; fjson=[] ; df=[] ; d=[] ; f=[] ; list=[]
@@ -209,9 +275,6 @@ class 	AgileFUSE(Operations):
 			object = o['name']
 			listing.append( object.encode('utf-8') )
 
-		#d=[o['name'] for o in cache['directories']] ; listing.extend(d)
-		#f=[o['name'] for o in cache['files']] ; listing.extend(f)
-		# print repr(listing)
 		return listing 
 
 	def	rename(self, old, new):
