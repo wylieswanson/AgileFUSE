@@ -73,7 +73,11 @@ class 	AgileFUSE(Operations):
 		self.path = '/'
 	
 	def	__del__(self):
-		self.agile.logout()
+		try:
+			self.agile.logout()
+		except AttributeError:
+			pass
+
 	
 	def	__call__(self, op, path, *args):
 		if self.verbosity: print '->', op, path, args[0] if args else ''
