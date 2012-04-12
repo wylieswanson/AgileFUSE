@@ -1,0 +1,15 @@
+AC_PREREQ(2.59)
+
+AC_INIT([lama-readerdl], [0.0], [bblack@llnw.com])
+AM_INIT_AUTOMAKE([1.9 foreign])
+
+AC_PROG_CC
+AM_PROG_LEX
+AC_PROG_YACC
+AC_PROG_RANLIB
+
+AC_CHECK_FUNCS(epoll_ctl)
+AC_HEADER_STDC
+
+AC_CONFIG_FILES([Makefile])
+AC_OUTPUT
