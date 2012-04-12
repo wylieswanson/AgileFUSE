@@ -77,7 +77,6 @@ class 	AgileFUSE(Operations):
 			self.agile.logout()
 		except AttributeError:
 			pass
-
 	
 	def	__call__(self, op, path, *args):
 		if self.verbosity: print '->', op, path, args[0] if args else ''
@@ -215,21 +214,28 @@ class 	AgileFUSE(Operations):
 		url = self.agile.mapperurl+urllib2.quote(path.replace("//","/"))
 		if self.verbosity: print 'READ(%s,%d,%d)' % (path.replace("//","/"),size,offset)
 
+		print "ASKING FOR: %d OF %d, total=%d" % (offset, size, (offset+size))
+		big_buffer = ''
 		data = ''
 		reader = AgileReader(sockpath='/tmp/lama-readerd.sock')
 		if self.verbosity: print repr(reader)
 		payload = reader.create_payload(url=url, offset=offset, size=size)
-		if self.verbosity: print "created payload, len: %d" %(len(payload))
+		if self.verbosity: print "created payload, offset=%d, size=%d, len: %d" %(offset, size, len(payload))
 		if len(payload):
+			totalread = 0
+			reader.send_request(payload)
+			if self.verbosity: print "sent payload to %s" % (reader.sockpath)
 			while True:
-				data += reader.socket.recv(MAX_RECV)
+				data = reader.socket.recv(size)
 				if not data: break
-				if self.verbosity: print "recvd %d len packet" % (len(data))
+				big_buffer += data
+				print "%d/%d" % (len(data), len(big_buffer))
 			reader.socket.close()
+			print "closed socket"
 		else:
 			if self.verbosity: print "ERROR: bad payload"
-		if self.verbosity: print "returning data, len: %d" % (len(data))
-		return data
+		if self.verbosity: print "returning big_buffer, len: %d" % (len(big_buffer))
+		return big_buffer
 
 
 	def	updatecachepath( self, path='/', dirs_only=False, files_only=False, overrideCache=False ):
