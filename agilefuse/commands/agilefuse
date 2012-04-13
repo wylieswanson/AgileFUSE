@@ -18,7 +18,7 @@ def	main():
 	parser.add_option("-d", "--debug", action="store_true", dest="debug", help="run in debug mode", default=False)
 	parser.add_option("-v", "--verbose", action="count", dest="verbosity", help="verbose operation,  more -v's increase verbosity")
 	parser.add_option("-m", "--mount", dest="mount", help="mount path, default: '"+DEFAULT_MOUNT+"'", default=DEFAULT_MOUNT)
-	parser.add_option("-r", "--readlib", dest="readlib", help="read library: urllib or curl [default: %default]", default="urllib")
+	parser.add_option("-r", "--readlib", dest="readlib", help="read library: agile, urllib or curl [default: %default]", default="urllib")
 
 	parser.add_option("--disable-threads", action="store_true", dest="nothreads", help="run in single-threaded mode", default=False)
 	parser.add_option("--enable-threads", action="store_true", dest="threads", help="run in threaded mode [default]", default=True)
@@ -54,7 +54,7 @@ def	main():
 	if len(args)<>0: parser.error("Wrong number of arguments -- use '%s -h' for help" % (sys.argv[0]))
 	if options.threads and options.nothreads: parser.error("You can't use --enable-threads and --disable-threads -- use '%s -h' for help" % (sys.argv[0]))
 
-	if options.readlib not in ['urllib','curl']:
+	if options.readlib not in ['agile', 'urllib','curl']:
 		print "%s: invalid read library, use 'urllib' or 'curl'." % options.readlib
 		sys.exit(1)
 	if not os.path.isdir(options.mount):

@@ -204,7 +204,7 @@ class 	AgileFUSE(Operations):
 			except:
 				raise
 			return write_buf
-		elif self.readlib=='agile-readerd':
+		elif self.readlib=='agile':
 			print "ASKING FOR: %d OF %d, total=%d" % (offset, size, (offset+size))
 			big_buffer = ''
 			data = ''
