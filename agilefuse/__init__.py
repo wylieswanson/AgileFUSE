@@ -173,7 +173,8 @@ class 	AgileFUSE(Operations):
 	def	mkdir(self, path, mode):
 		return self.agile.makeDir(path)
 
-	def	oldread(self, path, size, offset, fh):
+	def	read(self, path, size, offset, fh):
+		MAX_RECV=4096
 		global write_buf
 		url = self.agile.mapperurl+urllib2.quote(path.replace("//","/"))
 		if self.verbosity: print 'READ(%s,%d,%d)' % (path.replace("//","/"),size,offset)
@@ -203,40 +204,32 @@ class 	AgileFUSE(Operations):
 			except:
 				raise
 			return write_buf
+		elif self.readlib=='agile-readerd':
+			print "ASKING FOR: %d OF %d, total=%d" % (offset, size, (offset+size))
+			big_buffer = ''
+			data = ''
+			reader = AgileReader(sockpath='/tmp/lama-readerd.sock')
+			if self.verbosity: print repr(reader)
+			payload = reader.create_payload(url=url, offset=offset, size=size)
+			if self.verbosity: print "created payload, offset=%d, size=%d, len: %d" %(offset, size, len(payload))
+			if len(payload):
+				totalread = 0
+				reader.send_request(payload)
+				if self.verbosity: print "sent payload to %s" % (reader.sockpath)
+				while True:
+					data = reader.socket.recv(size)
+					if not data: break
+					big_buffer += data
+					print "%d/%d" % (len(data), len(big_buffer))
+				reader.socket.close()
+				print "closed socket"
+			else:
+				if self.verbosity: print "ERROR: bad payload"
+			if self.verbosity: print "returning big_buffer, len: %d" % (len(big_buffer))
+			return big_buffer
 		else:
 			if verbosity: print "%s: invalid read library" % (self.readlib)
 			return False
-
-
-	def	read(self, path, size, offset, fh):
-		MAX_RECV=4096
-
-		url = self.agile.mapperurl+urllib2.quote(path.replace("//","/"))
-		if self.verbosity: print 'READ(%s,%d,%d)' % (path.replace("//","/"),size,offset)
-
-		print "ASKING FOR: %d OF %d, total=%d" % (offset, size, (offset+size))
-		big_buffer = ''
-		data = ''
-		reader = AgileReader(sockpath='/tmp/lama-readerd.sock')
-		if self.verbosity: print repr(reader)
-		payload = reader.create_payload(url=url, offset=offset, size=size)
-		if self.verbosity: print "created payload, offset=%d, size=%d, len: %d" %(offset, size, len(payload))
-		if len(payload):
-			totalread = 0
-			reader.send_request(payload)
-			if self.verbosity: print "sent payload to %s" % (reader.sockpath)
-			while True:
-				data = reader.socket.recv(size)
-				if not data: break
-				big_buffer += data
-				print "%d/%d" % (len(data), len(big_buffer))
-			reader.socket.close()
-			print "closed socket"
-		else:
-			if self.verbosity: print "ERROR: bad payload"
-		if self.verbosity: print "returning big_buffer, len: %d" % (len(big_buffer))
-		return big_buffer
-
 
 	def	updatecachepath( self, path='/', dirs_only=False, files_only=False, overrideCache=False ):
 		djson=[] ; fjson=[] ; df=[] ; d=[] ; f=[] ; list=[]

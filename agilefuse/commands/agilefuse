@@ -27,7 +27,7 @@ def	main():
 	group.add_option("--volname", dest="volname", help="setup a volume name, default: 'Agile Storage'", default="Agile Storage")
 	group.add_option("-i", "--icon", dest="volicon", help="setup a volume icon, default: '/etc/agile/agile.icns'", default="/etc/agile/agile.icns")
 
-	group.add_option("--enable-browse", action="store_true", dest="browse", help="Finder will browse the volume [default]", default=False)
+	group.add_option("--enable-browse", action="store_true", dest="browse", help="Finder will browse the volume [default]", default=True)
 	group.add_option("--disable-browse", action="store_false", dest="browse", help="Finder will NOT browse the volume")
 
 	group.add_option("--enable-local", action="store_true", dest="local", help="treat as a local filesystem [default]", default=True)
@@ -36,11 +36,11 @@ def	main():
 	group.add_option("--enable-autocache", action="store_true", dest="autocache", help="detect modification time changes with getattr")
 	group.add_option("--disable-autocache", action="store_false", dest="autocache", help="detect modification time changes with getattr [default]", default=False)
 	
-	group.add_option("--enable-xattr", action="store_false", dest="noapplexattr", help="xattr [default]", default=False)
-	group.add_option("--disable-xattr", action="store_true", dest="noapplexattr", help="xattr is disabled")
+	group.add_option("--enable-xattr", action="store_true", dest="xattr", help="xattr [default]", default=True)
+	group.add_option("--disable-xattr", action="store_false", dest="xattr", help="xattr is disabled")
 
-	group.add_option("--enable-double", action="store_false", dest="noappledouble", help="noappledouble")
-	group.add_option("--disable-double", action="store_true", dest="noappledouble", help="no apple double [default]", default=True)
+	group.add_option("--enable-double", action="store_true", dest="double", help="double [default]", default=True)
+	group.add_option("--disable-double", action="store_false", dest="double", help="no double")
 
 	group.add_option("--defer_permissions", action="store_true", dest="defer_permissions", help="defer permissions to the remote", default=True)
 	group.add_option("--negative_vncache", action="store_true", dest="negative_vncache", help="negative_vncache", default=True)
@@ -80,11 +80,11 @@ def	main():
 	if sys.platform == "darwin":
 		unmountStr = "When done, eject it from the Finder or run 'unmount %s'." % "AgileFUSE"
 		kwargs['volname'] = options.volname
-		if options.noappledouble: kwargs['noappledouble'] = True
 		if options.local: kwargs['local'] = True
-		if options.noapplexattr: kwargs['noapplexattr'] = options.noapplexattr
-		if options.negative_vncache: kwargs['negative_vncache'] = options.negative_vncache
+		if options.double is False: kwargs['noappledouble'] = True
+		if options.xattr is False: kwargs['noapplexattr'] = True
 		if options.browse is False: kwargs['nobrowse'] = True
+		if options.negative_vncache: kwargs['negative_vncache'] = options.negative_vncache
 		if options.readonly: kwargs['rdonly'] = options.readonly
 		if options.iosize: kwargs['iosize'] = options.iosize
 		if options.defer_permissions: kwargs['defer_permissions'] = options.defer_permissions
@@ -93,7 +93,7 @@ def	main():
 				kwargs['modules'] = 'volicon'
 				kwargs['iconpath'] = options.volicon
 			else:
-				print "file not found: %s, volume icon is unavailable."
+				print "file not found: %s, volume icon is unavailable." % (options.volicon)
 	else:
 		unmountStr = "Unmount it with `fusermount -u %s' (without quotes)." % options.mount
 
