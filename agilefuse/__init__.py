@@ -9,7 +9,8 @@ __author__ = "Wylie Swanson (wylie@pingzero.net)"
 from AgileCLU import AgileCLU
 import os, time, datetime, pylibmc, hashlib, json, urllib2, pycurl, socket
 from stat import S_IFDIR, S_IFREG
-from fuse import FUSE, Operations
+from fuse import FUSE, Operations, FuseOSError
+from errno import ENOENT
 
 
 class	AgileReader(object):
@@ -66,8 +67,7 @@ class 	AgileFUSE(Operations):
 		self.agile = AgileCLU('agile')
 		self.mc = pylibmc.Client(['127.0.0.1:11211'], binary=True, behaviors={"tcp_nodelay": True, "ketama": True})
 		self.pool = pylibmc.ClientPool(self.mc, 10)
-		self.cache = {}
-		self.key = None
+		self.cache={} ; self.key={} ; self.cache[0] = {} ; self.key[0] = [] ; self.cache[1] = {} ; self.key[1] = []
 
 		self.root = '/'
 		self.path = '/'
@@ -92,86 +92,122 @@ class 	AgileFUSE(Operations):
 			raise OSError(*e.args)
 		finally:
 			if self.verbosity: print '<-', op
-	
+
 	def	fixpath(self, path):
+		# if self.verbosity>=10: print 'fixpath(%s)' % (path)
 		path = os.path.normpath(path).replace('//','/')
 		if path=='': path=u'/'
 		return path
 
-	def	getcache(self, path):
+	def	getcache(self, path, typ=0):
 		path = self.fixpath(path)
-		key = hashlib.sha256(path).hexdigest()
-		if self.key==key: return self.cache
+		key = str(typ)+hashlib.sha256(path).hexdigest()
+		if self.key[typ]==key: return self.cache[typ]
 		with self.pool.reserve() as mc:
-			if self.verbosity: print "- getcache %s (%s)" % (path, key)
-			self.key = key
-			self.cache = mc.get( key )
-			return self.cache
+			self.key[typ] = key ; self.cache[typ] = mc.get( key )
+			if self.verbosity>=2: print "- getcache %s (%s) = %s" % (path, self.key[typ], str(self.cache[typ]) )
+			return self.cache[typ]
 
-	def	setcache(self, path, val):
-		path = self.fixpath(path)
-		key = hashlib.sha256(path).hexdigest()
-		self.key = key
-		self.cache = val
+	def	setcache(self, path, val, typ=0):
+		TIMEOUT=300
+		path = self.fixpath(path) ; key = str(typ)+hashlib.sha256(path).hexdigest() ; self.key[typ] = key ; self.cache[typ] = val
 		with self.pool.reserve() as mc:
-			if self.verbosity: print "- setcache %s (%s) = %s" % (path, key, val)
-			mc.set( key, val, 300, 256 )
+			if self.verbosity>=2: print "- setcache %s (%s) = %s" % (path, self.key[typ], self.cache[typ])
+			mc.set( self.key[typ], self.cache[typ], TIMEOUT, 256 )
 		return True
 
-	def	delcache(self, path):
-		path = self.fixpath(path)
-		key = hashlib.sha256(path).hexdigest()
-		if self.verbosity: print "- delcache %s (%s)" % (path, key)
+	def	delcache(self, path, typ=0):
+		path = self.fixpath(path) ; key = str(typ)+hashlib.sha256(path).hexdigest() 
+		if self.verbosity>=2: print "- delcache %s (%s)" % (path, key )
 		with self.pool.reserve() as mc:
 			return mc.delete( key )
 
+
+	def cache2lists(self,cache):
+		f=[] ; d=[]
+		if cache is not None:
+			for o in cache['files']: f.append(o['name'])
+			for o in cache['directories']: d.append(o['name'])
+		return f,d
+	
+	def what(self,name,cache):
+		if name is '': 
+			print "/ is a directory" 
+			return
+		if cache is not None:
+			f=[] ; d=[]
+			(f,d)=cache2lists(cache)
+	
+			if name in f: 		print name,"is a file"
+			elif name in d: 	print name,"is a directory"
+			else: 				print name,"does not exist"
+		else:					print name,"does not exist"
+
+
+	def dirparents(self,path):
+		parents=[]
+		for i in xrange(len(path.split('/'))):
+			(head, tail) = os.path.split(path)
+			parents.append(head)
+			path = head
+		parents.pop()
+		return parents
+
+
+	def thetest(self, search ):
+		(directory, name) = os.path.split(search)
+		parents = dirparents(search)
+	
+		cache = agile.getcache( parents[0],0 )
+		if cache is None: 
+			agile.path2caches( parents[0] )
+			cache = agile.getcache( parents[0] )
+		
+		what(name, cache)
+
+
 	def	create(self, path, mode):
+		if self.verbosity>=3: print 'create(%s,%s)' % (path,str(mode))
 		'''f = self.sftp.open(path, 'w')
 		f.chmod(mode)
 		f.close()'''
 		return 0
 
 	def	getattr(self, path, fh=None):
+		if self.verbosity>=3: print 'getattr(%s,%s)' % (path,str(fh)),
 		path=self.fixpath(path)
-		object=path
-		cache = self.getcache(path)
-		if cache is None:
-			cache = self.getcache(os.path.split(path)[0])
 
-		if cache is not None:
-			found=None
-			if cache['path']==path:
-				found=cache ; omode = 0755 | S_IFDIR ; found['name']=path ; olink=1
-			if not found:
-				for o in cache['files']:
-					if o['name']==os.path.split(path)[1]:
-						found=o ; omode = 0755 | S_IFREG ; olink = 1
-			if not found:
-				for o in cache['directories']:
-					if o['name']==os.path.split(path)[1]:
-						found=o ; omode = 0755 | S_IFDIR ; olink = 2
-			if found:
-				ret = dict( st_gid=os.getgid(), st_uid=os.getuid(), st_size=found['size'], st_nlink=olink, st_mode=omode, st_atime=time.time(), st_ctime=found['ctime'], st_mtime=found['mtime'] )
-				# print "getattr(%s) found %s -> %s" % (path,found['name'],repr(ret))
-				return ret
-			else:
-				return dict()
+		(dirname,filename) = os.path.split(path)
+		parents = self.dirparents(path)
+		
+		self.getcache( parents[0], 0 )
+		self.getcache( parents[0], 1 )
+		if self.cache[0] is None: 
+			self.path2caches( parents[0] ) # maybe it just expired?  retry
 
-		if self.verbosity: print "MANUAL STAT - NO CACHE (%s)?" % (path)
-		astat = self.agile.stat( path )
-		if 'type' in astat:
-			if astat['type']==1: # directory
-				if path=='/':
-					return dict( st_gid=os.getgid(), st_uid=os.getuid(), st_mode=S_IFDIR | 0755, st_nlink=1, st_ctime=time.time(), st_mtime=time.time(), st_atime=time.time() )
-				else:
-					return dict( st_gid=os.getgid(), st_uid=os.getuid(), st_mode=S_IFDIR | 0755, st_nlink=2, st_ctime=time.time(), st_mtime=time.time(), st_atime=time.time() )
-			elif astat['type']==2: # file
-				return dict( st_gid=os.getgid(), st_uid=os.getuid(), st_mode=S_IFREG | 0777, st_size=astat['size'], st_nlink=1, st_ctime=time.time(), st_mtime=time.time(), st_atime=time.time() )
-		else:
-			return dict()
+		if self.cache[0] is None:
+			raise FuseOSError(ENOENT)
+			
+
+		l=self.cache[0];f=[];d=[]
+		if filename=='': 
+			return dict( st_gid=os.getgid(), st_uid=os.getuid(), st_size=666, st_mode=0755|S_IFDIR, st_atime=time.time(), st_ctime=time.time(), st_mtime=time.time() )
+		for o in l['files']:
+			if filename in o['name']:
+				return dict( st_gid=os.getgid(), st_uid=os.getuid(), st_size=o['size'], st_mode=0755|S_IFREG, st_atime=o['ctime'], st_ctime=o['ctime'], st_mtime=o['mtime'] )
+		for o in l['directories']:
+			if filename in o['name']:
+				return dict( st_gid=os.getgid(), st_uid=os.getuid(), st_size=o['size'], st_mode=0755|S_IFDIR, st_atime=o['ctime'], st_ctime=o['ctime'], st_mtime=o['mtime'] )
+		raise FuseOSError(ENOENT)
 
 	def	mkdir(self, path, mode):
-		return self.agile.makeDir(path)
+		if self.verbosity>=3: print 'mkdir(%s,%s)' % (path,str(mode))
+		result = self.agile.makeDir(path)
+		self.delcache(path,0) ; self.delcache(path,1)
+		self.delcache(os.path.split(path)[0],0) ; self.delcache(os.path.split(path)[0],1)
+		self.path2caches(os.path.split(path)[0])
+		self.path2caches(path)
+		return 0
 
 	def	read(self, path, size, offset, fh):
 		MAX_RECV=4096
@@ -205,7 +241,7 @@ class 	AgileFUSE(Operations):
 				raise
 			return write_buf
 		elif self.readlib=='agile':
-			print "ASKING FOR: %d OF %d, total=%d" % (offset, size, (offset+size))
+			if self.verbosity>=3: print "ASKING FOR: %d OF %d, total=%d" % (offset, size, (offset+size))
 			big_buffer = ''
 			data = ''
 			reader = AgileReader(sockpath='/tmp/lama-readerd.sock')
@@ -220,9 +256,9 @@ class 	AgileFUSE(Operations):
 					data = reader.socket.recv(size)
 					if not data: break
 					big_buffer += data
-					print "%d/%d" % (len(data), len(big_buffer))
+					if self.verbosity>=3: print "%d/%d" % (len(data), len(big_buffer))
 				reader.socket.close()
-				print "closed socket"
+				if self.verbosity>=3: print "closed socket"
 			else:
 				if self.verbosity: print "ERROR: bad payload"
 			if self.verbosity: print "returning big_buffer, len: %d" % (len(big_buffer))
@@ -231,7 +267,7 @@ class 	AgileFUSE(Operations):
 			if verbosity: print "%s: invalid read library" % (self.readlib)
 			return False
 
-	def	updatecachepath( self, path='/', dirs_only=False, files_only=False, overrideCache=False ):
+	def	path2caches( self, path='/', dirs_only=False, files_only=False, overrideCache=False ):
 		djson=[] ; fjson=[] ; df=[] ; d=[] ; f=[] ; list=[]
 		path = self.fixpath(path)
 		if not path.startswith( '/' ): path=u'/%s' % path
@@ -249,24 +285,30 @@ class 	AgileFUSE(Operations):
 
 			jsonstr = '''{ "path": "'''+path+'''", "size": '''+str(st.get('size', 0))+''', "ctime": '''+str(st['ctime'])+''', "mtime": '''+str(st['mtime'])+''', '''
 			jsonstr = jsonstr + '''"files": [ '''
-			for object in fjson['list']: 
-				jsonstr = jsonstr + '''{ "name": "'''+object['name']+'''", "ctime": '''+str(object['stat']['ctime'])+''', "mtime": '''+str(object['stat']['mtime'])+''', "size": '''+str(object['stat']['size'])+''' },'''
-			jsonstr = jsonstr[0:len(jsonstr)-1]
+			for object in fjson['list']: jsonstr = jsonstr + '''{ "name": "'''+object['name']+'''", "ctime": '''+str(object['stat']['ctime'])+''', "mtime": '''+str(object['stat']['mtime'])+''', "size": '''+str(object['stat']['size'])+''' },'''
+			jsonstr = jsonstr[0:len(jsonstr)-1] 
 			jsonstr = jsonstr + ''' ], "directories": [ '''
-			for object in djson['list']:
-				jsonstr = jsonstr + '''{ "name": "'''+object['name']+'''", "ctime": '''+str(object['stat']['ctime'])+''', "mtime": '''+str(object['stat']['mtime'])+''', "size": 0 },'''
-			jsonstr = jsonstr[0:len(jsonstr)-1]
+			for object in djson['list']: jsonstr = jsonstr + '''{ "name": "'''+object['name']+'''", "ctime": '''+str(object['stat']['ctime'])+''', "mtime": '''+str(object['stat']['mtime'])+''', "size": 0 },'''
+			jsonstr = jsonstr[0:len(jsonstr)-1] 
 			jsonstr = jsonstr + ''' ] }'''
+			self.setcache(cachepath,json.loads(jsonstr),0)
+	
+			jsonstr = '''{ "path": "'''+path+'''", ''' ; jsonstr = jsonstr + '''"files": [ '''
+			for object in fjson['list']: jsonstr = jsonstr + '''"'''+object['name']+'''",'''
+			jsonstr = jsonstr[0:len(jsonstr)-1] ; jsonstr = jsonstr + ''' ], ''' ; jsonstr = jsonstr + '''"directories": [ '''
+			for object in djson['list']: jsonstr = jsonstr + '''"'''+object['name']+'''",'''
+			jsonstr = jsonstr[0:len(jsonstr)-1] ; jsonstr = jsonstr + ''' ] }'''
+			self.setcache(cachepath,json.loads(jsonstr),1)
 
-			self.setcache(cachepath,json.loads(jsonstr))
 
 			return self.getcache(cachepath)
 		return self.getcache(cachepath)
 
 	def	readdir(self, path, fh):
+		if self.verbosity>=3: print 'readdir(%s,%s)' % (path,str(fh))
 		path=self.fixpath(path)
 		self.path=path
-		cache = self.updatecachepath( path )
+		cache = self.path2caches( path )
 
 		# print "%s %s" % (repr(path), repr(fh))
 		# print "%s" % (repr(cache))
@@ -280,24 +322,39 @@ class 	AgileFUSE(Operations):
 
 		return listing 
 
-	def	rename(self, old, new):
-		if self.verbosity: print "rename %s %s" % (old, new)
-		return self.agile.rename(old, self.root + new)
+	def	rename(self, path, newpath):
+		if self.verbosity>=3: print 'rename(%s,%s)' % (path,newpath)
+		result = self.agile.rename(path, self.root + newpath)
+		self.delcache(path,0)
+		self.delcache(path,1)
+		self.delcache(os.path.split(path)[0],0)
+		self.delcache(os.path.split(path)[0],1)
+		self.path2caches(os.path.split(path)[0])
+		return result
+
 
 	def	rmdir(self, path):
+		if self.verbosity>=3: print 'rmdir(%s)' % (path)
 		result = self.agile.deleteDir(path)
-		self.delcache(path)
-		self.delcache(os.path.split(path)[0])
-		self.updatecachepath(os.path.split(path)[0])
-		return result
+		time.sleep(3)
+		self.delcache(path,0)
+		self.delcache(path,1)
+		self.delcache(os.path.split(path)[0],0)
+		self.delcache(os.path.split(path)[0],1)
+		self.path2caches(os.path.split(path)[0])
+		return 0
 
 	def	unlink(self, path):
+		if self.verbosity>=3: print 'unlink(%s)' % (path)
 		result = self.agile.deleteFile(path)
-		self.delcache(os.path.split(path)[0])
-		self.updatecachepath(os.path.split(path)[0])
-		return result
+		time.sleep(3)
+		self.delcache(os.path.split(path)[0],0)
+		self.delcache(os.path.split(path)[0],1)
+		self.path2caches(os.path.split(path)[0])
+		return 0
 
 	def	write(self, path, data, offset, fh):
+		if self.verbosity>=3: print 'write(%s)' % (path)
 		f = self.agile.post(path, 'r+')
 		f.seek(offset, 0)
 		f.write(data)

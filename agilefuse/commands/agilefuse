@@ -39,10 +39,12 @@ def	main():
 	group.add_option("--enable-xattr", action="store_true", dest="xattr", help="xattr [default]", default=True)
 	group.add_option("--disable-xattr", action="store_false", dest="xattr", help="xattr is disabled")
 
-	group.add_option("--enable-double", action="store_true", dest="double", help="double [default]", default=True)
+	group.add_option("--enable-double", action="store_true", dest="double", help="double [default]", default=False)
 	group.add_option("--disable-double", action="store_false", dest="double", help="no double")
 
-	group.add_option("--defer_permissions", action="store_true", dest="defer_permissions", help="defer permissions to the remote", default=True)
+	group.add_option("--disable-perm", action="store_true", dest="defer_permissions", help="defer permissions to the remote", default=True)
+	group.add_option("--enable-perm", action="store_false", dest="defer_permissions", help="defer permissions to the remote")
+
 	group.add_option("--negative_vncache", action="store_true", dest="negative_vncache", help="negative_vncache", default=True)
 	group.add_option("--nolocalcaches", action="store_true", dest="nolocalcaches", help="disables unified buffer cache, vnode name caching, attr caching, and readaheads", default=False)
 	group.add_option("--iosize", dest="iosize", help="iosize, where N is the I/O size in bytes", default="1048576")
@@ -87,7 +89,7 @@ def	main():
 		if options.negative_vncache: kwargs['negative_vncache'] = options.negative_vncache
 		if options.readonly: kwargs['rdonly'] = options.readonly
 		if options.iosize: kwargs['iosize'] = options.iosize
-		if options.defer_permissions: kwargs['defer_permissions'] = options.defer_permissions
+		if options.defer_permissions: kwargs['defer_permissions'] = True
 		if options.volicon:
 			if os.path.isfile(options.volicon):
 				kwargs['modules'] = 'volicon'
@@ -100,10 +102,15 @@ def	main():
 	if options.autocache: kwargs['auto_cache'] = options.autocache
 	if options.nothreads: kwargs['nothreads'] = True
 
-	if options.verbosity:
-		print unmountStr
+	if options.verbosity: print unmountStr
+	if options.verbosity>=2: print str(kwargs)
 
-	result = AgileFUSE(options.verbosity).updatecachepath('/')
+	if options.verbosity>=2: print "Updating / cache..."
+	result = AgileFUSE(options.verbosity).delcache('/',0)
+	result = AgileFUSE(options.verbosity).delcache('/',1)
+	result = AgileFUSE(options.verbosity).path2caches('/')
+
+	if options.verbosity>=2: print "Mounting..."
 	fuse = FUSE(AgileFUSE(options.readlib, options.verbosity), options.mount, **kwargs )
 
 if __name__ == "__main__":
